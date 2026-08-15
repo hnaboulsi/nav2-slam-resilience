@@ -1,0 +1,23 @@
+# ROS 2 / colcon build artifacts
+build/
+install/
+log/
+*.egg-info/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info
+
+# rosbags (large, produced locally — keep out unless deliberately committed under results/)
+*.mcap
+*.db3
+rosbag2_*/
+
+# Large media (videos in particular) — small gifs/plots may still be committed deliberately
+media/*.mp4
+
+# OS
+.DS_Store
