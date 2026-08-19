@@ -1,0 +1,23 @@
+# Severity knob: Gaussian noise stddev (meters) added to LiDAR range readings
+# via the robot description's <noise> element (see robot/tb3_noisy.urdf.xacro).
+# 0.0 is the no-fault baseline point on the sweep.
+schema_version: 1
+name: lidar_noise_sweep
+
+fault:
+  type: noise
+  severities: [0.0, 0.01, 0.03, 0.05, 0.08, 0.12]
+  trials_per_severity: 5
+
+mission:
+  goals:
+    - {x: 1.5, y: 0.0, yaw: 0.0}
+    - {x: 1.5, y: 1.5, yaw: 1.5708}
+    - {x: 0.0, y: 1.5, yaw: 3.1416}
+  goal_timeout_sec: 90.0
+
+thresholds:
+  localization_error_bound_m: 0.3
+  goal_tolerance_m: 0.25
+  map_stale_sec: 2.0
+  recovery_hold_sec: 3.0

@@ -1,0 +1,25 @@
+# Severity knob: the rate (Hz) that /scan is throttled down to via
+# `topic_tools throttle` before slam_toolbox/Nav2 ever see it. The robot's
+# real LiDAR still publishes at its native rate the whole time; only the
+# throttled copy is degraded, so the raw stream stays available as an
+# independent check that the requested degradation was actually applied.
+schema_version: 1
+name: lidar_dropout_sweep
+
+fault:
+  type: dropout
+  severities: [10.0, 5.0, 2.0, 1.0, 0.5]
+  trials_per_severity: 5
+
+mission:
+  goals:
+    - {x: 1.5, y: 0.0, yaw: 0.0}
+    - {x: 1.5, y: 1.5, yaw: 1.5708}
+    - {x: 0.0, y: 1.5, yaw: 3.1416}
+  goal_timeout_sec: 90.0
+
+thresholds:
+  localization_error_bound_m: 0.3
+  goal_tolerance_m: 0.25
+  map_stale_sec: 2.0
+  recovery_hold_sec: 3.0
