@@ -28,8 +28,11 @@ setup(
     ),
     license="Apache-2.0",
     tests_require=["pytest"],
-    # console_scripts for ground_truth_node / nav_mission_node land here once
-    # those nodes are actually implemented (see CHECKPOINT.md) - no entries
-    # for modules that don't exist yet.
-    entry_points={"console_scripts": []},
+    # ground_truth_node lands here once it's actually implemented (see
+    # CHECKPOINT.md) - no entry for a module that doesn't exist yet.
+    entry_points={
+        "console_scripts": [
+            "nav_mission_node = nav2_slam_resilience.nav_mission_node:main",
+        ],
+    },
 )

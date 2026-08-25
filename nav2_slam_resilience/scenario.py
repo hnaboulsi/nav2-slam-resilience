@@ -43,6 +43,14 @@ class FaultSweep:
 
 @dataclass(frozen=True)
 class MissionGoal:
+    """A goal pose in the `map` frame, relative to the robot's spawn pose.
+
+    slam_toolbox anchors `map` at wherever the robot woke up, not at Gazebo's
+    world-frame origin - a goal expressed in Gazebo world coordinates will be
+    rejected as "outside bounds" the moment the map hasn't grown that far yet.
+    Every goal here is relative to spawn: (0, 0) is where the robot started.
+    """
+
     x: float
     y: float
     yaw: float

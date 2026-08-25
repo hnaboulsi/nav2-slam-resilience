@@ -30,8 +30,15 @@ Running status against the milestone plan. Updated as work lands, not written in
       - New pure module + tests: `nav2_slam_resilience/model_patch.py` patches the stock
         LiDAR noise stddev in the real vendor `model.sdf` (extracted into
         `tests/unit/fixtures/` and tested against directly, not a hand-written approximation).
-- [ ] **M1** — Fix the goal-pose framing bug above, get one scripted no-fault mission to
-      actually complete, then build the record→render pipeline (bag → gif).
+- [x] **M1a** — Real, scripted, no-fault mission actually completes. `nav_mission_node.py`
+      (thin wrapper around `nav2_simple_commander.BasicNavigator`, waiting on `slam_toolbox`
+      instead of `amcl` via `waitUntilNav2Active(localizer="slam_toolbox")`) drove all 3 goals
+      in `scenarios/lidar_noise_sweep.yaml` end to end against the real headless stack:
+      `goal 0: (1.5, 0.0) -> SUCCEEDED in 9.8s`, `goal 1: (1.5, 1.5) -> SUCCEEDED in 5.9s`,
+      `goal 2: (0.0, 1.5) -> SUCCEEDED in 15.0s`, process exit code 0. The map-frame-vs-world-
+      frame bug from M0 is fixed by treating scenario goals as spawn-relative (documented on
+      `MissionGoal` in `scenario.py`).
+- [ ] **M1b** — Build the record→render pipeline (bag → gif) around this working mission.
 - [ ] **M2** — Verify both fault severities (noise stddev sweep, throttle-rate sweep) actually
       change stack behavior, observable from a recorded bag.
 - [ ] **M3** — `scripts/extract_metrics.py`: bag → per-trial metrics JSON.
@@ -53,3 +60,12 @@ Running status against the milestone plan. Updated as work lands, not written in
 - Image is large (6.75GB) - `ros-dev-tools` pulls in a big transitive dependency tree
   (RViz, VTK, Qt5, boost-all-dev) that isn't strictly needed since we never compile C++ from
   source. Worth trimming later; not urgent for local dev.
+
+## Process note
+
+While testing M1, a `docker run --mount ... source="$PWD"` used the shell's actual cwd at
+that moment, which had silently reset to `~/Documents` (not this repo) - bind-mounting the
+whole Documents folder into a local container for a few minutes before a `FileNotFoundError`
+surfaced it. Caught immediately, container removed right away, nothing pushed or shared
+anywhere. Going forward: docker mount sources in this repo's scripts always use the explicit
+absolute repo path, never `$PWD`.
