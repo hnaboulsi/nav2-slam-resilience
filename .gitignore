@@ -11,10 +11,12 @@ __pycache__/
 .ruff_cache/
 *.egg-info
 
-# rosbags (large, produced locally — keep out unless deliberately committed under results/)
+# rosbags (large, produced locally as a working artifact - only the gif/plots
+# rendered from them are meant to be committed, under media/)
 *.mcap
 *.db3
 rosbag2_*/
+media/bags/
 
 # Large media (videos in particular) — small gifs/plots may still be committed deliberately
 media/*.mp4

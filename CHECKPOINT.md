@@ -38,7 +38,26 @@ Running status against the milestone plan. Updated as work lands, not written in
       `goal 2: (0.0, 1.5) -> SUCCEEDED in 15.0s`, process exit code 0. The map-frame-vs-world-
       frame bug from M0 is fixed by treating scenario goals as spawn-relative (documented on
       `MissionGoal` in `scenario.py`).
-- [ ] **M1b** — Build the record→render pipeline (bag → gif) around this working mission.
+- [x] **M1b** — Record→render pipeline works end to end and produced a real demo gif
+      (`media/demo_baseline.gif`, 1.2MB, real map + traced path through all 3 waypoints).
+      `scripts/run_demo.sh` launches the stack, records `/map /map_metadata /pose /odom
+      /scan_raw /scan /tf /tf_static /cmd_vel /diagnostics` via `ros2 bag record`, runs the
+      mission, then renders. Three real bugs found and fixed along the way:
+      - `nav2_slam_resilience/bagio.py` hardcoded `storage_id="sqlite3"`, but Jazzy's
+        `ros2 bag record` defaults to **mcap** - fixed to `storage_id=""` (auto-detect from
+        the bag's own metadata) rather than assuming a backend.
+      - `ros2 bag record` did not reliably stop on `SIGINT` without a controlling tty (which
+        `docker exec` doesn't allocate) - it sat ignoring the signal indefinitely in one run.
+        `run_demo.sh` now sends `SIGTERM` first, polls up to 15s, then escalates to `SIGKILL`
+        as a bounded last resort, so the pipeline can never hang on this again.
+      - `navigator.lifecycleShutdown()` in `nav_mission_node.py` raised
+        `rclpy.executors.ExternalShutdownException` after a successful mission - removed
+        entirely, since it tears down the *shared* Nav2/slam_toolbox lifecycle nodes that
+        this per-trial script doesn't own anyway (that's the launch process's job).
+      - `scripts/render_bag_to_video.py` originally emitted one animation frame per `/map`
+        message (only 7-14 over a ~30s mission - unwatchably choppy). Rewrote it to resample
+        onto a uniform real-time grid (holding the latest map, linearly interpolating pose
+        between bracketing samples), so playback speed now matches actual mission duration.
 - [ ] **M2** — Verify both fault severities (noise stddev sweep, throttle-rate sweep) actually
       change stack behavior, observable from a recorded bag.
 - [ ] **M3** — `scripts/extract_metrics.py`: bag → per-trial metrics JSON.
@@ -69,3 +88,9 @@ whole Documents folder into a local container for a few minutes before a `FileNo
 surfaced it. Caught immediately, container removed right away, nothing pushed or shared
 anywhere. Going forward: docker mount sources in this repo's scripts always use the explicit
 absolute repo path, never `$PWD`.
+
+The same cwd-reset happened again later the same session (`bash scripts/run_demo.sh` failing
+with "No such file or directory" because cwd had silently reverted to `~/Documents`) -
+harmless that time (just a failed command), but it's evidently not a one-off. Every command
+in this project now uses an absolute path rather than assuming cwd persists between shell
+calls.

@@ -110,7 +110,14 @@ def main(argv: list[str] | None = None) -> int:
             f"in {outcome.elapsed_sec:.1f}s"
         )
 
-    navigator.lifecycleShutdown()
+    # Deliberately not calling navigator.lifecycleShutdown(): it tears down
+    # the shared Nav2/slam_toolbox lifecycle nodes, which this script does
+    # not own - the stack persists across the whole recording session (and,
+    # from M4 on, across repeated trials), it's the launch process's job to
+    # bring it down. Observed lifecycleShutdown() raise
+    # rclpy.executors.ExternalShutdownException here too - one more reason
+    # not to call it from a script that's meant to run once per trial.
+    navigator.destroy_node()
     rclpy.shutdown()
     return 0 if ok else 1
 
