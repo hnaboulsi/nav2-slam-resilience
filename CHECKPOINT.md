@@ -58,8 +58,29 @@ Running status against the milestone plan. Updated as work lands, not written in
         message (only 7-14 over a ~30s mission - unwatchably choppy). Rewrote it to resample
         onto a uniform real-time grid (holding the latest map, linearly interpolating pose
         between bracketing samples), so playback speed now matches actual mission duration.
-- [ ] **M2** — Verify both fault severities (noise stddev sweep, throttle-rate sweep) actually
-      change stack behavior, observable from a recorded bag.
+- [x] **M2** — Both fault types verified to actually change stack behavior, with real trial
+      gifs as evidence (`media/demo_noise_high.gif`, `demo_dropout_10hz.gif`,
+      `demo_dropout_severe.gif`), and they degrade in qualitatively different ways:
+      - **Noise (`lidar_noise_sweep.yaml`, stddev 0.2 vs. baseline 0.01)**: graceful
+        degradation. Mission still completes, but goal 2 takes **79.7s vs. ~15s baseline**,
+        and the map is visibly speckled with false-positive obstacles from noisy range
+        readings (compare `demo_baseline.gif` to `demo_noise_high.gif`).
+      - **Dropout (`lidar_dropout_sweep.yaml`, throttle rate)**: a sharp cliff, not a gradient.
+        10 Hz (faster than the LiDAR's native 5 Hz, effectively pass-through) completes
+        normally (all 3 goals SUCCEEDED). 2 Hz and 0.5 Hz both **fail almost instantly**
+        (`FAILED in 0.1-0.5s`) - root cause confirmed from the container log, not assumed:
+        `[tf_help]: Transform data too old when converting from odom to map` →
+        `[controller_server]: Unable to transform robot pose into global plan's frame` →
+        goal aborted. Below-native throttling starves slam_toolbox's `map`→`odom` correction
+        rate past Nav2's TF staleness tolerance almost immediately - a real, correctly-
+        attributed stack failure mode, not a script bug. This means the current dropout
+        severities already bracket a real success/failure boundary somewhere between 5 Hz and
+        2 Hz - worth a finer-grained sweep there specifically at M5.
+      - **Real bug found and fixed along the way**: `run_demo.sh` had `set -euo pipefail`
+        wrapping the mission-run step, so a mission that legitimately *fails* under a fault
+        (exactly the interesting trials) aborted the whole script before the render step ever
+        ran - the two most interesting trials were silently never rendered. Fixed by scoping
+        `set +e`/`set -e` around just that step so failure is captured, not fatal.
 - [ ] **M3** — `scripts/extract_metrics.py`: bag → per-trial metrics JSON.
 - [ ] **M4** — One scenario, one severity, a handful of trials, real metrics produced and
       sanity-checked by hand.

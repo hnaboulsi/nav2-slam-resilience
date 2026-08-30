@@ -1,13 +1,15 @@
 #!/bin/bash
-# Run one no-fault mission inside the dev container, recording a bag of it,
-# then render the bag to a demo gif. Requires scripts/build.sh to have been
-# run at least once (or run it now - the image is reused if unchanged).
+# Run one mission inside the dev container, recording a bag of it, then
+# render the bag to a demo gif. Requires scripts/build.sh to have been run
+# at least once (or run it now - the image is reused if unchanged).
 #
-# Usage: scripts/run_demo.sh [scenario_yaml] [bag_name]
+# Usage: scripts/run_demo.sh [scenario_yaml] [bag_name] [noise_stddev] [throttle_rate_hz]
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCENARIO="${1:-scenarios/lidar_noise_sweep.yaml}"
 BAG_NAME="${2:-demo_baseline}"
+NOISE_STDDEV="${3:-0.01}"
+THROTTLE_RATE_HZ="${4:-30.0}"
 CONTAINER_NAME="nav2_slam_resilience_demo_$$"
 
 cleanup() {
@@ -22,7 +24,8 @@ docker run -d --name "$CONTAINER_NAME" \
     source /opt/ros/jazzy/setup.bash
     colcon build --symlink-install --packages-select nav2_slam_resilience
     source install/setup.bash
-    ros2 launch nav2_slam_resilience bench_headless.launch.py
+    ros2 launch nav2_slam_resilience bench_headless.launch.py \
+      noise_stddev:=$NOISE_STDDEV throttle_rate_hz:=$THROTTLE_RATE_HZ
   " >/dev/null
 
 echo "waiting for the stack to become active..."
@@ -36,6 +39,10 @@ for _ in $(seq 1 90); do
 done
 
 echo "recording bag + running mission..."
+# Deliberately not letting `set -e` abort here: a mission that fails under a
+# fault is often the more interesting trial (that's the whole point of the
+# severity sweep) - it still needs its bag rendered, not skipped.
+set +e
 docker exec "$CONTAINER_NAME" bash -c "
   source /opt/ros/jazzy/setup.bash
   source /workspace/install/setup.bash
@@ -63,6 +70,7 @@ docker exec "$CONTAINER_NAME" bash -c "
   exit \$MISSION_RC
 "
 MISSION_RC=$?
+set -e
 
 echo "mission exit code: $MISSION_RC"
 echo "bag written to media/bags/$BAG_NAME"
