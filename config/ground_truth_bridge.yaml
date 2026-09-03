@@ -1,0 +1,19 @@
+# Bridges Gazebo's own physics-computed pose for every dynamic entity in the
+# world - published automatically by gz-sim core, no plugin needed - into a
+# ROS topic. This is the benchmark's ground truth: independent of anything
+# the diff-drive plugin integrates or slam_toolbox estimates, since it comes
+# directly from the physics engine's own state each step.
+#
+# gz.msgs.Pose_V carries a `name` per entry, but ros_gz_bridge's bridging to
+# geometry_msgs/msg/PoseArray drops names (PoseArray has none) - verified by
+# direct inspection (`gz topic -e -t /world/default/dynamic_pose/info`) that
+# our spawned robot ("burger") is always poses[0], since it's the only
+# dynamic model in this world. See scripts/extract_metrics.py.
+#
+# "default" is this world file's actual <world name>, not a placeholder -
+# checked directly against worlds/turtlebot3_world.world rather than assumed.
+- ros_topic_name: ground_truth_pose_array
+  gz_topic_name: /world/default/dynamic_pose/info
+  ros_type_name: geometry_msgs/msg/PoseArray
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS

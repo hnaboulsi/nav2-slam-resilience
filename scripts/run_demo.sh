@@ -50,10 +50,12 @@ docker exec "$CONTAINER_NAME" bash -c "
   rm -rf /workspace/src/nav2_slam_resilience/media/bags/$BAG_NAME
   ros2 bag record -o /workspace/src/nav2_slam_resilience/media/bags/$BAG_NAME \
     /map /map_metadata /pose /odom /scan_raw /scan /tf /tf_static \
-    /cmd_vel /diagnostics &
+    /cmd_vel /diagnostics /ground_truth_pose_array &
   BAGPID=\$!
   sleep 2
-  timeout 150 ros2 run nav2_slam_resilience nav_mission_node --scenario /workspace/src/nav2_slam_resilience/$SCENARIO
+  timeout 150 ros2 run nav2_slam_resilience nav_mission_node \
+    --scenario /workspace/src/nav2_slam_resilience/$SCENARIO \
+    --result-out /workspace/src/nav2_slam_resilience/media/bags/$BAG_NAME/result.json
   MISSION_RC=\$?
   sleep 2
   # ros2 bag record does not reliably stop on SIGINT without a controlling
@@ -86,4 +88,18 @@ docker exec "$CONTAINER_NAME" bash -c "
 "
 
 echo "gif written to media/$BAG_NAME.gif"
+
+echo "extracting metrics..."
+mkdir -p "$REPO_ROOT/results"
+docker exec "$CONTAINER_NAME" bash -c "
+  source /opt/ros/jazzy/setup.bash
+  source /workspace/install/setup.bash
+  cd /workspace/src/nav2_slam_resilience
+  python3 scripts/extract_metrics.py \
+    --bag media/bags/$BAG_NAME \
+    --result media/bags/$BAG_NAME/result.json \
+    --out results/${BAG_NAME}_metrics.json
+"
+echo "metrics written to results/${BAG_NAME}_metrics.json"
+
 exit "$MISSION_RC"

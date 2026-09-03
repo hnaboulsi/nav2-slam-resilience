@@ -12,6 +12,7 @@ deadline should not count as a success for this benchmark.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 import time
@@ -30,6 +31,12 @@ class GoalOutcome:
     nav2_result: TaskResult
     elapsed_sec: float
     timed_out: bool
+    # ROS/sim time (nanoseconds, use_sim_time=true) bracketing this goal -
+    # the same clock domain everything in the bag is recorded in, so
+    # scripts/extract_metrics.py can window bag data to a specific goal
+    # without guessing at an offset between wall-clock and sim time.
+    start_ns: int
+    end_ns: int
 
 
 def _yaw_to_quaternion(yaw: float) -> tuple[float, float, float, float]:
@@ -61,6 +68,7 @@ def run_mission(navigator: BasicNavigator, mission: Mission) -> list[GoalOutcome
     outcomes: list[GoalOutcome] = []
     for goal in mission.goals:
         pose = _goal_to_pose_stamped(navigator, goal)
+        start_ns = navigator.get_clock().now().nanoseconds
         navigator.goToPose(pose)
 
         start = time.monotonic()
@@ -73,9 +81,17 @@ def run_mission(navigator: BasicNavigator, mission: Mission) -> list[GoalOutcome
                 break
 
         elapsed = time.monotonic() - start
+        end_ns = navigator.get_clock().now().nanoseconds
         result = navigator.getResult() if not timed_out else TaskResult.FAILED
         outcomes.append(
-            GoalOutcome(goal=goal, nav2_result=result, elapsed_sec=elapsed, timed_out=timed_out)
+            GoalOutcome(
+                goal=goal,
+                nav2_result=result,
+                elapsed_sec=elapsed,
+                timed_out=timed_out,
+                start_ns=start_ns,
+                end_ns=end_ns,
+            )
         )
 
         if timed_out or result != TaskResult.SUCCEEDED:
@@ -87,7 +103,37 @@ def run_mission(navigator: BasicNavigator, mission: Mission) -> list[GoalOutcome
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", required=True, help="Path to a scenario YAML file")
+    parser.add_argument(
+        "--result-out",
+        help="Optional path to write a JSON summary of goal outcomes "
+        "(scripts/extract_metrics.py reads this to window bag data per goal)",
+    )
     return parser.parse_args(argv)
+
+
+def _write_result_json(
+    path: str, scenario: ScenarioConfig, outcomes: list[GoalOutcome], ok: bool
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "scenario_name": scenario.name,
+        "ok": ok,
+        "goals": [
+            {
+                "x": o.goal.x,
+                "y": o.goal.y,
+                "yaw": o.goal.yaw,
+                "nav2_result": o.nav2_result.name,
+                "elapsed_sec": o.elapsed_sec,
+                "timed_out": o.timed_out,
+                "start_ns": o.start_ns,
+                "end_ns": o.end_ns,
+            }
+            for o in outcomes
+        ],
+    }
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -109,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
             f"goal {i}: ({outcome.goal.x}, {outcome.goal.y}) -> {status} "
             f"in {outcome.elapsed_sec:.1f}s"
         )
+
+    if args.result_out:
+        _write_result_json(args.result_out, scenario, outcomes, ok)
 
     # Deliberately not calling navigator.lifecycleShutdown(): it tears down
     # the shared Nav2/slam_toolbox lifecycle nodes, which this script does

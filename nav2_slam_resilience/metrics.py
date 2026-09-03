@@ -48,6 +48,47 @@ class NavOutcome(Enum):
     TIMEOUT = "timeout"
 
 
+def align_ground_truth_to_estimate_start(
+    estimated: list[PoseSample],
+    ground_truth: list[PoseSample],
+    max_gap_sec: float = 0.5,
+) -> list[PoseSample]:
+    """Shift `ground_truth` so it coincides with `estimated`'s first sample.
+
+    The SLAM estimate (`/pose`) lives in the `map` frame, which slam_toolbox
+    anchors at wherever the robot happened to be when its first pose
+    estimate was produced; ground truth (`/ground_truth_pose_array`) is
+    Gazebo's world frame, anchored at the world's own origin and sampled far
+    more often. The two frames coincide, up to a pure translation, only
+    because the robot spawns with zero yaw.
+
+    Naively shifting each series by *its own* first sample (an earlier
+    version of this function) silently assumes both series' first samples
+    were captured at the same instant - false here: ground truth publishes
+    at physics-timestep rate while `/pose` publishes rarely, so "first
+    sample" can be seconds apart, and that gap shows up as a constant,
+    fake localization error baked into every subsequent measurement. This
+    instead finds ground truth's position at the *same timestamp* as
+    `estimated`'s first sample (nearest-match, via `synchronize_pose_series`)
+    and shifts the whole ground-truth series by the offset needed to make
+    that matched point equal `estimated[0]` - tying both series to one real,
+    shared moment instead of two independently-chosen ones.
+
+    Returns an empty list (nothing to compare against) if `estimated` is
+    empty or no ground-truth sample falls within `max_gap_sec` of its first
+    timestamp.
+    """
+    if not estimated or not ground_truth:
+        return []
+    matches = synchronize_pose_series([estimated[0]], ground_truth, max_gap_sec)
+    if not matches:
+        return []
+    _, matched_gt = matches[0]
+    dx = estimated[0].x - matched_gt.x
+    dy = estimated[0].y - matched_gt.y
+    return [PoseSample(t=p.t, x=p.x + dx, y=p.y + dy) for p in ground_truth]
+
+
 def synchronize_pose_series(
     reference: list[PoseSample],
     other: list[PoseSample],

@@ -6,6 +6,7 @@ from nav2_slam_resilience.metrics import (
     ErrorSample,
     NavOutcome,
     PoseSample,
+    align_ground_truth_to_estimate_start,
     classify_navigation_outcome,
     collision_count,
     localization_error_series,
@@ -13,6 +14,66 @@ from nav2_slam_resilience.metrics import (
     synchronize_pose_series,
     time_to_recover,
 )
+
+
+class TestAlignGroundTruthToEstimateStart:
+    def test_shifts_ground_truth_so_matched_point_equals_estimate_start(self):
+        # Ground truth is offset by (+10, +20) from the map frame throughout -
+        # a pure translation, as if the map frame's origin were elsewhere in
+        # Gazebo's world. Ground truth is also sampled far more densely than
+        # the estimate, matching real /pose vs /ground_truth_pose_array rates.
+        estimated = [PoseSample(t=5.0, x=0.0, y=0.0), PoseSample(t=6.0, x=1.0, y=0.0)]
+        ground_truth = [
+            PoseSample(t=0.0, x=10.0, y=20.0),
+            PoseSample(t=5.0, x=10.0, y=20.0),  # matches estimated[0]'s time
+            PoseSample(t=6.0, x=11.0, y=20.0),
+        ]
+        aligned = align_ground_truth_to_estimate_start(estimated, ground_truth)
+        # Every sample shifts by the same (-10, -20), including the one at
+        # t=5.0 that anchored the shift - it must land exactly on (0, 0).
+        assert aligned[1].x == pytest.approx(0.0)
+        assert aligned[1].y == pytest.approx(0.0)
+        assert aligned[2].x == pytest.approx(1.0)
+        assert aligned[2].y == pytest.approx(0.0)
+        assert aligned[0].x == pytest.approx(0.0)
+        assert aligned[0].y == pytest.approx(0.0)
+
+    def test_ignores_ground_truths_own_first_sample_when_irrelevant(self):
+        # Regression case for the bug this replaced: the naive fix ("shift by
+        # each series' own first sample") would anchor on t=0 here even
+        # though the estimate doesn't start until t=100 - silently comparing
+        # two different moments and baking in a fake constant error.
+        estimated = [PoseSample(t=100.0, x=0.0, y=0.0)]
+        ground_truth = [
+            PoseSample(t=0.0, x=999.0, y=999.0),
+            PoseSample(t=100.0, x=5.0, y=5.0),
+        ]
+        aligned = align_ground_truth_to_estimate_start(estimated, ground_truth)
+        assert aligned[1].x == pytest.approx(0.0)
+        assert aligned[1].y == pytest.approx(0.0)
+
+    def test_preserves_timestamps(self):
+        estimated = [PoseSample(t=0.0, x=0.0, y=0.0)]
+        ground_truth = [PoseSample(t=0.0, x=1.0, y=1.0)]
+        aligned = align_ground_truth_to_estimate_start(estimated, ground_truth)
+        assert aligned[0].t == 0.0
+
+    def test_empty_estimated_returns_empty(self):
+        assert align_ground_truth_to_estimate_start([], [PoseSample(0.0, 1.0, 1.0)]) == []
+
+    def test_empty_ground_truth_returns_empty(self):
+        assert align_ground_truth_to_estimate_start([PoseSample(0.0, 0.0, 0.0)], []) == []
+
+    def test_no_ground_truth_within_gap_returns_empty(self):
+        estimated = [PoseSample(t=0.0, x=0.0, y=0.0)]
+        ground_truth = [PoseSample(t=10.0, x=1.0, y=1.0)]
+        assert align_ground_truth_to_estimate_start(estimated, ground_truth, max_gap_sec=0.5) == []
+
+    def test_does_not_mutate_inputs(self):
+        estimated = [PoseSample(t=0.0, x=0.0, y=0.0)]
+        ground_truth = [PoseSample(t=0.0, x=10.0, y=20.0)]
+        align_ground_truth_to_estimate_start(estimated, ground_truth)
+        assert ground_truth[0].x == 10.0 and ground_truth[0].y == 20.0
 
 
 class TestSynchronizePoseSeries:

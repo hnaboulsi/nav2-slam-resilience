@@ -7,16 +7,19 @@ than reimplemented: `ros_gz_sim`'s `gz_sim.launch.py`, `turtlebot3_gazebo`'s
 `robot_state_publisher.launch.py`, `slam_toolbox`'s `online_sync_launch.py`,
 and `nav2_bringup`'s `bringup_launch.py` (included directly, not through
 `turtlebot3_navigation2`'s wrapper, because that wrapper hardcodes
-`use_sim_time:=false` and doesn't expose `slam:=`). The only two things this
-file adds are: (1) a validated text patch of the stock LiDAR model's noise
-stddev at spawn time (`nav2_slam_resilience.model_patch`, unit-tested against
-the real vendor file - see tests/unit/test_model_patch.py), and (2) a
-`topic_tools throttle` node sitting on the real LiDAR topic before anything
-else sees it, so both a noise sweep (baked into the spawned model) and a
-dropout/rate sweep (the throttle rate) share one fault path: Gazebo's real
-sensor always publishes to `/scan_raw`, unmodified; what slam_toolbox and
-Nav2 actually consume is `/scan`, the throttled copy - so `/scan_raw` stays
-available the whole time as an independent check on what was really applied.
+`use_sim_time:=false` and doesn't expose `slam:=`). What this file adds:
+(1) a validated text patch of the stock LiDAR model's noise stddev at spawn
+time (`nav2_slam_resilience.model_patch`, unit-tested against the real
+vendor file - see tests/unit/test_model_patch.py); (2) a `topic_tools
+throttle` node sitting on the real LiDAR topic before anything else sees it,
+so both a noise sweep (baked into the spawned model) and a dropout/rate
+sweep (the throttle rate) share one fault path: Gazebo's real sensor always
+publishes to `/scan_raw`, unmodified; what slam_toolbox and Nav2 actually
+consume is `/scan`, the throttled copy - so `/scan_raw` stays available the
+whole time as an independent check on what was really applied; and (3) a
+second `ros_gz_bridge` instance bridging Gazebo's own physics-computed pose
+(`/world/default/dynamic_pose/info`) as ground truth, independent of
+anything the diff-drive plugin integrates or slam_toolbox estimates.
 """
 
 from __future__ import annotations
@@ -25,7 +28,6 @@ import os
 import tempfile
 
 from ament_index_python.packages import get_package_share_directory
-from launch import LaunchDescription
 from launch.actions import (
     AppendEnvironmentVariable,
     DeclareLaunchArgument,
@@ -36,6 +38,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+from launch import LaunchDescription
 from nav2_slam_resilience.model_patch import patch_lidar_noise_stddev
 
 TURTLEBOT3_MODEL = os.environ.get("TURTLEBOT3_MODEL", "burger")
@@ -73,11 +76,16 @@ def _spawn_patched_robot(context, *args, **kwargs):
         package="ros_gz_sim",
         executable="create",
         arguments=[
-            "-name", TURTLEBOT3_MODEL,
-            "-file", patched_model_path,
-            "-x", x_pose,
-            "-y", y_pose,
-            "-z", "0.01",
+            "-name",
+            TURTLEBOT3_MODEL,
+            "-file",
+            patched_model_path,
+            "-x",
+            x_pose,
+            "-y",
+            y_pose,
+            "-z",
+            "0.01",
         ],
         output="screen",
     )
@@ -91,7 +99,6 @@ def generate_launch_description():
     ros_gz_sim_dir = get_package_share_directory("ros_gz_sim")
 
     use_sim_time = LaunchConfiguration("use_sim_time")
-    noise_stddev = LaunchConfiguration("noise_stddev")
     throttle_rate_hz = LaunchConfiguration("throttle_rate_hz")
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
@@ -159,6 +166,21 @@ def generate_launch_description():
         output="screen",
     )
 
+    # Ground truth: Gazebo's own physics-computed pose for every dynamic
+    # entity, independent of the diff-drive plugin's odometry integration and
+    # of slam_toolbox's estimate. A second, separate bridge node (rather than
+    # folding this into bridge_cmd above) since it points at a different gz
+    # topic under a config file this repo owns, not the vendor's.
+    ground_truth_bridge_params = os.path.join(
+        get_package_share_directory("nav2_slam_resilience"), "config", "ground_truth_bridge.yaml"
+    )
+    ground_truth_bridge_cmd = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        arguments=["--ros-args", "-p", f"config_file:={ground_truth_bridge_params}"],
+        output="screen",
+    )
+
     slam_toolbox_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -171,7 +193,9 @@ def generate_launch_description():
     # Included directly from nav2_bringup (not through turtlebot3_navigation2's
     # wrapper) so slam:=true and use_sim_time:=true are actually reachable.
     nav2_bringup_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(nav2_bringup_dir, "launch", "bringup_launch.py")),
+        PythonLaunchDescriptionSource(
+            os.path.join(nav2_bringup_dir, "launch", "bringup_launch.py")
+        ),
         launch_arguments={
             # nav2_bringup's bringup_launch.py raw-evals `slam` as Python
             # (PythonExpression(['not ', slam, ' and ', use_localization])),
@@ -200,6 +224,7 @@ def generate_launch_description():
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(bridge_cmd)
     ld.add_action(throttle_cmd)
+    ld.add_action(ground_truth_bridge_cmd)
     ld.add_action(slam_toolbox_cmd)
     ld.add_action(nav2_bringup_cmd)
     return ld
