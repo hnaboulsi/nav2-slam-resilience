@@ -81,7 +81,31 @@ Running status against the milestone plan. Updated as work lands, not written in
         (exactly the interesting trials) aborted the whole script before the render step ever
         ran - the two most interesting trials were silently never rendered. Fixed by scoping
         `set +e`/`set -e` around just that step so failure is captured, not fatal.
-- [ ] **M3** — `scripts/extract_metrics.py`: bag → per-trial metrics JSON.
+- [x] **M3** — Ground truth wired and a real, trustworthy metrics-extraction pipeline works
+      end to end (`results/demo_metrics_test_metrics.json` is real output, not a fixture).
+      - Ground truth is Gazebo's own physics pose (`/world/default/dynamic_pose/info`,
+        bridged as `/ground_truth_pose_array`) - independent of the diff-drive plugin's
+        odometry integration and of slam_toolbox's estimate. Chose this over adding a
+        `PosePublisher` plugin to the robot after testing both directly: the plugin's
+        per-link topic makes every link indistinguishable after bridging (same `frame_id`);
+        the world-level topic needs no model patching and was empirically verified (twice) to
+        always carry the robot as `poses[0]`.
+      - Hit and understood a real crash along the way: an invented, non-existent
+        `publish_model_pose` plugin parameter caused a `std::length_error` abort inside
+        gz-sim itself - fixed by using only the plugin's actual documented parameters,
+        checked against gz-sim's own shipped example world rather than guessed.
+      - `nav_mission_node.py --result-out` now writes real ROS/sim-time-stamped per-goal
+        outcomes to JSON; `scripts/extract_metrics.py` turns one trial (bag + result JSON)
+        into a metrics JSON: localization error, map-update gaps, goal outcomes.
+      - **Real bug found and fixed before trusting any numbers**: the first alignment
+        approach shifted the estimate and ground truth series each to *its own* first
+        sample independently. Since ground truth publishes at physics-timestep rate and
+        `/pose` publishes rarely, their first samples are seconds apart - baking a constant
+        fake error into every measurement (a suspiciously uniform ~0.5m error on a clean
+        baseline gave it away). Fixed with `align_ground_truth_to_estimate_start`: finds
+        ground truth's position at the *same timestamp* as the estimate's first sample and
+        shifts from there. Same baseline run now reports **mean 1.5cm / max 2.9cm**
+        localization error - a physically plausible number for a working SLAM system.
 - [ ] **M4** — One scenario, one severity, a handful of trials, real metrics produced and
       sanity-checked by hand.
 - [ ] **M5** — Full severity sweep, aggregation, and the three headline plots.
